@@ -1,42 +1,68 @@
+#!/usr/bin/env python
+# -*- encoding: utf-8 -*-
+
 import scrapy
 from scrapy.selector import Selector
 import mysql.connector
+import hashlib
+import logging
+import gxdb
 
+log = logging.getLogger('DmozSpider')
+log.setLevel(logging.DEBUG)
 
 class DmozSpider(scrapy.Spider):
     name = "dmoz1"
     allowed_domains = ["gotopku.cn"]
     start_urls = [
-        "http://college.gaokao.com/schpoint/a1/"
+        "http://college.gaokao.com/schpoint/a1/p1/"
     ]
 
+    # start
     def parse(self, response):
+        db = gxdb.Gxdb()
+        db.addInfo()
+
         dls = response.xpath('//dl')
         for dl in dls:
+            # 详情
             gx_info = dl.xpath('./dt/strong/a/@href')
-            uls = dl.xpath('./dd/ul')
-            for ul in uls:
-                lis = ul.xpath('.//li')
-                a_1 = lis[3].xpath('./span/a/@href')
-                print '- %s' %(a_1.extract()[0])
+            # 分数线
+            gx_line = dl.xpath('./dd/ul/li/span/a/@href')
 
+            a_1 = gx_info.extract()
+            a_2 = gx_line.extract()
+            if len(a_1) > 0:
+                url = a_1[0]
+                uuid_1 = self.uuid(url)
 
-        # filename = response.url.split("/")[-1]
-        # with open(filename, 'wb') as f:
-        #     f.write(response.body)
-        # sel=Selector(response=response)
-        # table = sel.xpath('//table')
-        # trs = response.xpath('//dl')
-        # db = mysql.connector.connect(host="localhost", user="root", passwd="123456",database="test")
-        # cursor = db.cursor()
-        # for tr in trs:
-        #     tds = tr.xpath('.//td')
-        #     sql = "INSERT INTO gkfs_school(source_student,batch,chinese_score,math_score,other_score) VALUES(%s,%s,%s,%s,%s)"
-        #     v1 = tds[0].xpath('./text()').extract()[0]
-        #     v2 = tds[1].xpath('./text()').extract()[0]
-        #     v3 = tds[2].xpath('./text()').extract()[0]
-        #     v4 = tds[3].xpath('./text()').extract()[0]
-        #     v5 = tds[4].xpath('./text()').extract()[0]
-        #     val = (v1,v2,v3,v4,v5)
-        #     cursor.execute(sql,val)
-        #     db.commit()
+                log.info('- info_url %s _md5 %s',url,uuid_1)
+                yield scrapy.Request(url=url,callback=self.gx_info,meta={'uuid':uuid_1},dont_filter=True)
+                if len(a_2) > 0:
+                    url = a_2[0]
+                    log.info('- line_url %s',url)
+                    yield scrapy.Request(url=url,callback=self.gx_line,meta={'uuid':uuid_1},dont_filter=True)
+            # uls = dl.xpath('./dd/ul')
+            # for ul in uls:
+            #     lis = ul.xpath('.//li')
+            #     a_1 = lis[3].xpath('./span/a/@href')
+            #     log.info('- %s',a_1.extract()[0])
+
+    # 详情
+    def gx_info(self,response):
+        uuid = response.meta['uuid']
+        log.info('- gx_info md5 %s',uuid)
+        div = response.css('div.college_msg')
+        lis = div.xpath('.//li/text()')
+        log.info(lis.extract()[3])
+
+    #
+    def gx_line(self,response):
+        uuid = response.meta['uuid']
+        log.info('- gx_line %s',uuid)
+    # MD5
+    def uuid(self,url):
+        hash_md5 = hashlib.md5(url)
+        m1 = hash_md5.hexdigest()
+        return m1
+
